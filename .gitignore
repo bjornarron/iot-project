@@ -7,6 +7,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+build/
 # Logs
 *.log
 
@@ -19,3 +20,4 @@ Thumbs.db
 
 # Environment variables
 .env
+
