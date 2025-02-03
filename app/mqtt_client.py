@@ -4,7 +4,7 @@ from app.database import save_data
 
 class MQTTClient:
     def __init__(self):
-        self.client = mqtt.Client()
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.client.connect(BROKER_IP, PORT, 60)
@@ -13,14 +13,15 @@ class MQTTClient:
         # Track topic-specific callbacks
         self.topic_callbacks = {}
 
-    def on_connect(self, client, userdata, flags, rc):
+    def on_connect(self, client, userdata, flags, rc, properties=None):
         print("[DEBUG] Connected to MQTT Broker with result code:", rc)
+        client.subscribe("#")  # Subscribe to all topics
 
     def on_message(self, client, userdata, message):
         topic = message.topic
         payload = message.payload.decode()
 
-        print(f"[DEBUG] Message received: Topic={topic}, Payload={payload}")
+        print(f"[MQTT] Received: {topic} → {payload}")
 
         # Save data to the database
         save_data(topic, payload)
@@ -38,14 +39,12 @@ class MQTTClient:
     def subscribe(self, topic, callback):
         """Subscribe to a topic and store its callback."""
         if topic not in self.topic_callbacks:
-            print(f"[DEBUG] Subscribing to topic: {topic}")
             self.topic_callbacks[topic] = []
             self.client.subscribe(topic)
         self.topic_callbacks[topic].append(callback)
 
     def publish(self, topic, message):
         """Publish a message to a topic."""
-        print(f"[DEBUG] Publishing message: Topic={topic}, Payload={message}")
         self.client.publish(topic, message)
 
 mqtt_client = MQTTClient()
