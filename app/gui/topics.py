@@ -22,7 +22,7 @@ class TopicsPage(ttk.Frame):
         self.load_topics()
 
         # Subscribe to all topics with a wildcard
-        mqtt_client.subscribe("#", self.on_new_message)
+        mqtt_client.subscribe("#", self.on_new_message, qos=2)
 
     def load_topics(self):
         """Load topics from the database into the Treeview."""

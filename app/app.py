@@ -11,6 +11,7 @@ from app.gui.topics import TopicsPage
 from app.gui.command import CommandPage
 from app.gui.topic_data import TopicDataPage
 from app.mqtt_client import mqtt_client
+from app.gui.graphs import GraphsPage
 
 class MQTTApp(ttk.Window):  # Use ttkbootstrap for modern UI
     def __init__(self):
@@ -26,15 +27,17 @@ class MQTTApp(ttk.Window):  # Use ttkbootstrap for modern UI
         ttk.Button(self.navbar, text="Home", command=lambda: self.show_frame("HomePage")).pack(side="left", padx=10)
         ttk.Button(self.navbar, text="Topics", command=lambda: self.show_frame("TopicsPage")).pack(side="left", padx=10)
         ttk.Button(self.navbar, text="Commands", command=lambda: self.show_frame("CommandPage")).pack(side="left", padx=10)
+        ttk.Button(self.navbar, text="Graphs", command=lambda: self.show_frame("GraphsPage")).pack(side="left", padx=10)
 
         # Create Pages
         self.frames = {}
-        for Page in (HomePage, TopicsPage, CommandPage, TopicDataPage):
+        for Page in (HomePage, TopicsPage, CommandPage, TopicDataPage, GraphsPage):
             page_name = Page.__name__
             frame = Page(parent=self, controller=self)
             self.frames[page_name] = frame
             frame.grid(row=1, column=0, sticky="nsew")
 
+        
         self.show_frame("HomePage")
 
     def show_frame(self, page_name, topic=None):
