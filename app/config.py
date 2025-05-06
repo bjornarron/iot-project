@@ -1,8 +1,11 @@
 import os
 
 # MQTT Configuration
-BROKER_IP = "172.20.10.11"  # Change this to your actual broker IP
+BROKER_IP = "10.245.30.78"  # Change this to your actual broker IP
 PORT = 1883
+MQTT_USERNAME = "admin"
+MQTT_PASSWORD = "admin"
+
 
 # Database Configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

@@ -7,6 +7,8 @@ def init_db():
     """Initialize the database and create the table if it doesn't exist."""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
+    
+    # Update table schema to include precise_received_time
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS mqtt_data (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -16,12 +18,13 @@ def init_db():
             packet_size INTEGER NOT NULL,
             sent_timestamp TEXT NOT NULL,
             received_timestamp TEXT NOT NULL,
+            precise_received_time REAL,  -- New column for monotonic time
             latency REAL,
             jitter REAL,
             previous_latency REAL  -- Store previous latency for jitter calculation
         )
     """)
-    
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS qos_stats (
             qos_level INTEGER PRIMARY KEY,
@@ -29,19 +32,23 @@ def init_db():
         )
     """)
 
-    
     conn.commit()
     conn.close()
 
+
     
-def save_data(topic, payload, qos, received_timestamp, packet_size):
-    """Save a new topic, message, and timestamps to the database with corrected timestamps."""
+def save_data(topic, payload, qos, received_timestamp, packet_size, precise_received_time):
+    """Save MQTT messages using system-monotonic timing to ensure accuracy."""
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
 
     try:
         payload_data = json.loads(payload)  # Try parsing JSON
-        sent_timestamp = payload_data.get("sent_timestamp", received_timestamp)  # Use received_timestamp as fallback
+        if "sent_timestamp" in payload_data:
+            sent_timestamp = payload_data["sent_timestamp"]
+        else:
+            sent_timestamp = received_timestamp
+            print(f"[WARNING] 'sent_timestamp' missing from payload: {payload_data}")
         data = payload_data.get("data", str(payload))  # Extract actual message content
     except json.JSONDecodeError:
         sent_timestamp = received_timestamp  # Fallback in case of malformed JSON
@@ -51,40 +58,21 @@ def save_data(topic, payload, qos, received_timestamp, packet_size):
     try:
         sent_dt = datetime.strptime(sent_timestamp, "%Y-%m-%d %H:%M:%S.%f")
         received_dt = datetime.strptime(received_timestamp, "%Y-%m-%d %H:%M:%S.%f")
-        latency = (received_dt - sent_dt).total_seconds()
+        latency = (received_dt - sent_dt).total_seconds() + 0.01
     except ValueError:
         print(f"[ERROR] Timestamp format incorrect: Sent='{sent_timestamp}', Received='{received_timestamp}'")
-        latency = None  # Avoid storing incorrect data
+        latency = None
 
-    # Prevent negative latency
-    if latency is not None and latency < 0:
-        print(f"[WARNING] Negative latency detected! Sent='{sent_timestamp}', Received='{received_timestamp}'")
-        latency = abs(latency)  # Temporary fix (use absolute value)
-
-    # Retrieve last latency for jitter calculation
-    cursor.execute("SELECT latency FROM mqtt_data WHERE topic = ? ORDER BY id DESC LIMIT 1", (topic,))
-    last_entry = cursor.fetchone()
-    previous_latency = last_entry[0] if last_entry else latency
-    jitter = abs(latency - previous_latency) if latency is not None else None
-
-    print(f"[DEBUG] Saving to DB: Topic={topic}, QoS={qos}, PacketSize={packet_size}, Latency={latency:.6f}, Jitter={jitter:.6f}")
-
-    # Save data to database
-    if latency is not None:
-        cursor.execute("""
-            INSERT INTO mqtt_data (topic, data, qos_level, packet_size, sent_timestamp, received_timestamp, latency, jitter)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (topic, data, qos, packet_size, sent_timestamp, received_timestamp, latency, jitter))
-
+    # Store precise received time in seconds (monotonic)
     cursor.execute("""
-        INSERT INTO qos_stats (qos_level, received_packets)
-        VALUES (?, 1)
-        ON CONFLICT(qos_level) DO UPDATE SET received_packets = received_packets + 1;
-    """, (qos,))
-    
+        INSERT INTO mqtt_data (topic, data, qos_level, packet_size, sent_timestamp, received_timestamp, latency, precise_received_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (topic, data, qos, packet_size, sent_timestamp, received_timestamp, latency, precise_received_time))
+
     conn.commit()
     conn.close()
 
+    print(f"[INFO] Stored MQTT message: Topic={topic}, QoS={qos}, Latency={latency}")
 
     
 
@@ -111,6 +99,20 @@ def get_data_for_topic(topic):
     conn.close()
     return data
 
+def get_latency_dataframe():
+    """Returns a DataFrame with qos_level and latency for advanced visualizations."""
+    import pandas as pd
+    conn = sqlite3.connect(DATABASE_PATH)
+    query = """
+        SELECT qos_level, latency
+        FROM mqtt_data
+        WHERE latency IS NOT NULL AND latency > 0
+    """
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df
+
+
 def get_qos_latency_data():
     """Fetch QoS levels, latencies, packet sizes, and jitter values from the database."""
     conn = sqlite3.connect(DATABASE_PATH)
@@ -134,17 +136,22 @@ def get_qos_comparison():
     conn = sqlite3.connect(DATABASE_PATH)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT qos_level, received_packets FROM qos_stats ORDER BY qos_level ASC")
+    cursor.execute("""
+        SELECT qos_level, COUNT(*) FROM mqtt_data
+        GROUP BY qos_level
+        ORDER BY qos_level ASC
+    """)
+
     qos_comparison = cursor.fetchall()
-    
     conn.close()
-    
+
     if not qos_comparison:
-        print("[DEBUG] No QoS data found!")
+        print("[DEBUG] No QoS comparison data found!")
         return []
 
-    print(f"[DEBUG] QoS Comparison Data: {qos_comparison}")
+    print(f"[DEBUG] QoS Comparison Data: {qos_comparison}")  # Debugging output
     return qos_comparison
+
 
 
 # Ensure the database is initialized on startup
