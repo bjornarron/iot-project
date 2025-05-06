@@ -21,3 +21,4 @@ build/
 # Environment variables
 .env
 
+*.crt
